@@ -56,3 +56,6 @@ Los detalles de cada prueba están en el README de su ejercicio.
 
 - **Modularización**
 - **Pocos procesos a la vez**: no se crean procesos de más; los padres esperan a sus hijos y ninguno muere antes que ellos.
+
+## Aclaraciones
+- He usado el Copilot para subir y guardar los archivos que he ido haciendo por mi cuenta. Ya que no he usado nunca el Github, y no tenía ni idea de nada en general.
