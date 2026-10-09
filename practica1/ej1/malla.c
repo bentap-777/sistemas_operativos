@@ -4,11 +4,11 @@
 #include <errno.h>
 #include <sys/wait.h>
 
-#define ESPERA 20  /* segundos que viven los procesos de la ultima fila */
+#define ESPERA 20  /* Tiempo que las hojas permanecen vivas para poder ver el arbol. */
 
-/* ---------- Utilidades ---------- */
+/* ---------- Validación y espera de procesos ---------- */
 
-/* fork con comprobacion de error */
+/* Crea un hijo y termina con un mensaje claro si fork falla. */
 pid_t safe_fork(void)
 {
     pid_t pid = fork();
@@ -19,7 +19,7 @@ pid_t safe_fork(void)
     return pid;
 }
 
-/* Espera a un hijo concreto (y reintenta si una señal la interrumpe) */
+/* Espera al hijo indicado; si una señal interrumpe la espera, vuelve a intentarlo. */
 void wait_for_child(pid_t pid)
 {
     while (waitpid(pid, NULL, 0) == -1 && errno == EINTR)
@@ -40,11 +40,10 @@ void parse_args(int argc, char *argv[], int *rows, int *cols)
     }
 }
 
-/* ---------- Construccion del arbol ---------- */
+/* ---------- Construcción de las filas y columnas ---------- */
 
-/* El proceso actual cuelga 'rows_below' procesos mas por debajo, en vertical.
-   Si ya no quedan filas, es la ultima fila: se queda esperando para que
-   nos de tiempo a hacer pstree. */
+/* Cada llamada baja una fila. Al llegar a la última, el proceso espera un rato
+    para que se pueda consultar el árbol con pstree. */
 void run_row(int rows_below)
 {
     pid_t pid;
@@ -61,8 +60,8 @@ void run_row(int rows_below)
     wait_for_child(pid);
 }
 
-/* Crea 'cols' columnas, una detras de otra, cada una de 'rows' procesos.
-   Todas las columnas se crean antes de esperar a ninguna. */
+/* Crea una columna por hijo y termina de lanzarlas todas antes de esperarlas.
+    Cada columna tiene la cantidad de filas indicada. */
 void create_columns(int cols, int rows)
 {
     pid_t pid;
@@ -78,7 +77,7 @@ void create_columns(int cols, int rows)
     wait_for_child(pid);
 }
 
-/* ---------- main (proceso malla) ---------- */
+/* ---------- Inicio del proceso malla ---------- */
 
 int main(int argc, char *argv[])
 {

@@ -5,7 +5,7 @@
 #include <errno.h>
 #include <sys/wait.h>
 
-/* Variables globales */
+/* Cada proceso conserva aquí los PID que necesita para comunicarse. */
 int g_seconds;
 pid_t g_pid_ejec, g_pid_a, g_pid_b;
 pid_t g_pid_x, g_pid_y, g_pid_z;
@@ -13,9 +13,9 @@ pid_t g_pid_x, g_pid_y, g_pid_z;
 volatile sig_atomic_t g_b_must_destroy = 0;
 volatile sig_atomic_t g_leaf_must_die = 0;
 
-/* ---------- Utilidades del sistema ---------- */
+/* ---------- Ayudas para crear y esperar procesos ---------- */
 
-/* fork con comprobación de errores */
+/* Crea un proceso hijo y detiene el programa si fork falla. */
 pid_t safe_fork(void)
 {
     pid_t pid = fork();
@@ -26,21 +26,21 @@ pid_t safe_fork(void)
     return pid;
 }
 
-/* Espera bloqueante de un hijo tolerante a interrupciones por señal */
+/* Espera al hijo indicado y vuelve a intentarlo si una señal interrumpe la espera. */
 void wait_for_child(pid_t pid)
 {
     while (waitpid(pid, NULL, 0) == -1 && errno == EINTR)
         ;
 }
 
-/* Envía SIGUSR2 a una hoja y espera su terminación */
+/* Pide a una hoja que termine y espera a que el sistema confirme su salida. */
 void kill_and_wait(pid_t pid)
 {
     kill(pid, SIGUSR2);
     wait_for_child(pid);
 }
 
-/* Validación del argumento único de tiempo */
+/* Lee el tiempo de ejecución de Z y comprueba que sea positivo. */
 void parse_args(int argc, char *argv[])
 {
     if (argc != 2) {
@@ -54,44 +54,44 @@ void parse_args(int argc, char *argv[])
     }
 }
 
-/* ---------- Manejadores de señales ---------- */
+/* ---------- Respuesta de cada proceso a las señales ---------- */
 
-/* ejec: Inicia la cascada de destrucción hacia A */
+/* ejec inicia el cierre enviando la señal a A. */
 void handler_start_destruction(int sig)
 {
     (void)sig;
     kill(g_pid_a, SIGUSR2);
 }
 
-/* A: Propaga la orden de destrucción hacia B */
+/* A pasa a B la orden de empezar el cierre. */
 void handler_A_destroy_and_propagate(int sig)
 {
     (void)sig;
     kill(g_pid_b, SIGUSR2);
 }
 
-/* B: Habilita el apagado de sus hojas */
+/* B registra la orden; su bucle principal se encargará de cerrar las hojas. */
 void handler_B_destroy_and_propagate(int sig)
 {
     (void)sig;
     g_b_must_destroy = 1;
 }
 
-/* X, Y, Z: Permite salir del bucle de espera activa */
+/* Cada hoja marca que ya puede salir de su espera. */
 void handler_leaf_destroy(int sig)
 {
     (void)sig;
     g_leaf_must_die = 1;
 }
 
-/* Z: Vence el temporizador y ordena la ejecución a A */
+/* Al cumplirse el tiempo, Z pide a A que ejecute su tarea. */
 void handler_Z_alarm(int sig)
 {
     (void)sig;
     kill(g_pid_a, SIGUSR1);
 }
 
-/* A: Ejecuta pstree mediante un proceso efímero y notifica a ejec */
+/* A ejecuta pstree en un hijo y avisa a ejec cuando termina. */
 void handler_A_exec_task(int sig)
 {
     (void)sig;
@@ -105,7 +105,7 @@ void handler_A_exec_task(int sig)
     kill(g_pid_ejec, SIGUSR2);
 }
 
-/* ---------- Procesos hoja (X, Y, Z) ---------- */
+/* ---------- Procesos hoja X, Y y Z ---------- */
 
 void print_leaf_identity(char name)
 {
@@ -123,7 +123,7 @@ void run_leaf_process(char name)
         alarm(g_seconds);
     }
 
-    /* Espera activa permitida (sin sleep ni pause) */
+    /* Las hojas esperan la señal de cierre sin bloquearse con sleep o pause. */
     while (!g_leaf_must_die)
         ;
 
@@ -140,7 +140,7 @@ pid_t create_leaf_process(char name)
     return pid;
 }
 
-/* ---------- Proceso B ---------- */
+/* ---------- Proceso B y sus tres hojas ---------- */
 
 void run_process_B(void)
 {
@@ -157,7 +157,7 @@ void run_process_B(void)
     while (!g_b_must_destroy)
         ;
 
-    /* Destrucción secuencial en orden estricto Z -> Y -> X */
+    /* El ejercicio pide cerrar las hojas en este orden y esperar a cada una. */
     kill_and_wait(g_pid_z);
     kill_and_wait(g_pid_y);
     kill_and_wait(g_pid_x);
@@ -175,7 +175,7 @@ void create_B_process(void)
     wait_for_child(g_pid_b);
 }
 
-/* ---------- Proceso A ---------- */
+/* ---------- Proceso A, padre de B ---------- */
 
 void run_process_A(void)
 {
@@ -200,7 +200,7 @@ void create_A_process(void)
     wait_for_child(g_pid_a);
 }
 
-/* ---------- Proceso Raíz (ejec) ---------- */
+/* ---------- Proceso raíz: ejec ---------- */
 
 int main(int argc, char *argv[])
 {

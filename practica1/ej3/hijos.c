@@ -7,12 +7,12 @@
 #include <sys/shm.h>
 #include <sys/wait.h>
 
-/* Variables globales con datos compartidos */
+/* x e y definen el tamaño del árbol; la tabla compartida guarda los PID. */
 int x, y;
 int shmid;
-int *tabla_pids = NULL; /* Los primeros 'x' son la cadena, los siguientes 'y' son las hojas */
+int *tabla_pids = NULL; /* Primero van los PID de la cadena y después los de las hojas. */
 
-/* Control de fork con salida en caso de error */
+/* Crea un hijo y termina con un mensaje claro si fork falla. */
 pid_t safe_fork(void)
 {
     pid_t pid = fork();
@@ -23,14 +23,14 @@ pid_t safe_fork(void)
     return pid;
 }
 
-/* Espera a un hijo reintentando si llega una señal */
+/* Espera al hijo indicado y reintenta si una señal interrumpe la espera. */
 void esperar_hijo(pid_t pid)
 {
     while (waitpid(pid, NULL, 0) == -1 && errno == EINTR)
         ;
 }
 
-/* Valida argumentos */
+/* Lee las cantidades de procesos y comprueba que ambas sean positivas. */
 void parse_args(int argc, char *argv[])
 {
     if (argc != 3) {
@@ -45,7 +45,7 @@ void parse_args(int argc, char *argv[])
     }
 }
 
-/* Muestra un vector de PIDs separados por comas */
+/* Imprime los PID de la tabla separados por comas. */
 void imprimir_lista_pids(const int *pids, int cantidad)
 {
     for (int i = 0; i < cantidad; i++) {
@@ -55,7 +55,7 @@ void imprimir_lista_pids(const int *pids, int cantidad)
     }
 }
 
-/* Crea la zona de memoria compartida para almacenar (x + y) PIDs */
+/* Reserva una tabla compartida para los PID de la cadena y de las hojas. */
 void crear_memoria_compartida(void)
 {
     size_t tamano = (x + y) * sizeof(int);
@@ -73,14 +73,14 @@ void crear_memoria_compartida(void)
     }
 }
 
-/* Libera y destruye el segmento de memoria compartida */
+/* Desvincula la tabla y marca el segmento compartido para eliminarlo. */
 void liberar_memoria_compartida(void)
 {
     shmdt(tabla_pids);
     shmctl(shmid, IPC_RMID, NULL);
 }
 
-/* Crea de forma recursiva los 'y' procesos hoja */
+/* Crea las hojas una a una y espera a cada hijo antes de volver. */
 void crear_hojas_recursivo(int indice)
 {
     if (indice == y)
@@ -89,7 +89,7 @@ void crear_hojas_recursivo(int indice)
     pid_t pid = safe_fork();
 
     if (pid == 0) {
-        /* Proceso hoja: guarda su PID en la segunda seccion del array */
+        /* Cada hoja guarda su PID después de los PID de la cadena. */
         tabla_pids[x + indice] = getpid();
 
         printf("Soy el subhijo %d, mi padres son: ", getpid());
@@ -104,16 +104,16 @@ void crear_hojas_recursivo(int indice)
     esperar_hijo(pid);
 }
 
-/* Crea de forma recursiva los 'x' procesos de la cadena vertical */
+/* Crea la cadena vertical; el último proceso será el padre de todas las hojas. */
 void crear_cadena_recursivo(int nivel)
 {
     pid_t pid = safe_fork();
 
     if (pid == 0) {
-        /* Guarda su PID en la primera seccion del array */
+        /* La posición corresponde al nivel que ocupa este proceso en la cadena. */
         tabla_pids[nivel] = getpid();
 
-        /* Si es el ultimo de la cadena, crea las hojas; si no, sigue bajando */
+        /* Al final de la cadena crea las hojas; los demás niveles crean el siguiente. */
         if (nivel == x - 1) {
             crear_hojas_recursivo(0);
         } else {
@@ -132,10 +132,10 @@ int main(int argc, char *argv[])
     parse_args(argc, argv);
     crear_memoria_compartida();
 
-    /* Arranca la creacion vertical desde el nivel 0 */
+    /* Empieza la cadena desde su primer nivel. */
     crear_cadena_recursivo(0);
 
-    /* El superpadre imprime cuando todos los hijos y hojas han terminado */
+    /* Cuando termina la cadena, el superpadre muestra los PID de las hojas. */
     printf("Soy el superpadre (%d) : mis hijos finales son: ", getpid());
     imprimir_lista_pids(&tabla_pids[x], y);
     printf("\n");
