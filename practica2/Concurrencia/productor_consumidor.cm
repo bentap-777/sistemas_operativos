@@ -1,0 +1,63 @@
+// productor_consumidor.cm - Practica 2 (Concurrencia)
+// Productor-consumidor con buffer limitado mediante semaforos (JBACI, C--)
+//
+// mutex  -> exclusion mutua sobre el buffer
+// vacios -> sincronizacion: huecos libres (el productor espera si es 0)
+// llenos -> sincronizacion: elementos disponibles (el consumidor espera si es 0)
+
+const int N = 5;            // tamano del buffer
+const int ITEMS = 15;       // elementos a producir/consumir
+
+int buffer[N];
+int entrada = 0;            // siguiente posicion donde producir
+int salida = 0;             // siguiente posicion de donde consumir
+
+semaphore mutex;
+semaphore vacios;
+semaphore llenos;
+
+void productor()
+{
+    int i;
+    int dato;
+    for (i = 1; i <= ITEMS; i++) {
+        dato = i;                       // producir elemento
+
+        wait(vacios);                   // espera hueco libre
+        wait(mutex);                    // entra en seccion critica
+        buffer[entrada] = dato;
+        cout << "Productor: produce " << dato
+             << " en posicion " << entrada << endl;
+        entrada = (entrada + 1) % N;
+        signal(mutex);                  // sale de seccion critica
+        signal(llenos);                 // avisa: hay un elemento mas
+    }
+}
+
+void consumidor()
+{
+    int i;
+    int dato;
+    for (i = 1; i <= ITEMS; i++) {
+        wait(llenos);                   // espera elemento disponible
+        wait(mutex);                    // entra en seccion critica
+        dato = buffer[salida];
+        cout << "            Consumidor: consume " << dato
+             << " de posicion " << salida << endl;
+        salida = (salida + 1) % N;
+        signal(mutex);                  // sale de seccion critica
+        signal(vacios);                 // avisa: hay un hueco mas
+    }
+}
+
+main()
+{
+    initialsem(mutex, 1);
+    initialsem(vacios, N);
+    initialsem(llenos, 0);
+
+    cobegin {
+        productor();
+        consumidor();
+    }
+}
